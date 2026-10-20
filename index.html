@@ -3064,6 +3064,8 @@ function saveEquivRow(idx, codigo){
 
 function deleteEquivByKey(codigo){
   addLog('equivalencias','Eliminado',`Equivalencia eliminada: ${codigo}`);
+  // Borrar de BD por nombre_xml
+  apiFetch('/api/equivalencias/'+encodeURIComponent(codigo), {method:'DELETE'}).catch(()=>{});
   delete EQUIV_DB[codigo];
   saveEquivDB();
   rPage('equivalencias');
@@ -4488,6 +4490,19 @@ function exportarTodasOC(){
 
   // Cargar datos del backend (con fallback a localStorage)
   await DB._loadAll();
+
+  // Cargar equivalencias desde tabla BD (fuente de verdad)
+  try {
+    const equivRows = await apiFetch('/api/equivalencias');
+    if(Array.isArray(equivRows) && equivRows.length > 0){
+      equivRows.forEach(r => {
+        const key = r.nombre_xml;
+        if(!EQUIV_DB[key]) EQUIV_DB[key] = {descripcionXML: r.nombre_xml, asignadoEn: r.created_at||'', tasa: undefined};
+        if(r.sku) EQUIV_DB[key].sku = isNaN(r.sku) ? r.sku : Number(r.sku);
+        if(r.id) EQUIV_DB[key]._id = r.id;
+      });
+    }
+  } catch(e){ /* usa EQUIV_DB del localStorage */ }
 
   // Iniciar navegación — primer módulo permitido
   const firstMod = user && user.modulos && user.modulos.length ? user.modulos[0] : 'inv';
