@@ -708,13 +708,13 @@ function openImp(mod){
     ${isPrecio?`<div class="fg"><label>Nombre del periodo</label><input id="im-n" placeholder="${mod==='precios-compra'?'Lista compra Abr 2025':'Lista venta Abr 2025'}"></div>
     <div class="fg"><label>Fecha de inicio (vigencia)</label><input id="im-i" type="date" value="${ds()}"></div>
     <p style="font-size:12px;color:var(--tx2);margin-top:-6px;margin-bottom:12px">El precio estará vigente desde esta fecha hasta que se importe una nueva lista.</p>`:''}
-    <input type="file" id="file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFileUpload(this)">
+    <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.txt" style="display:none" onchange="handleFileUpload(this)">
     <div class="iz" id="drop-zone" onclick="document.getElementById('file-input').click()"
       ondragover="event.preventDefault();this.style.borderColor='var(--tx2)'"
       ondragleave="this.style.borderColor=''"
       ondrop="event.preventDefault();this.style.borderColor='';handleFileDrop(event)">
       <div style="font-size:28px;margin-bottom:8px">&#128193;</div>
-      <p style="font-size:13px;color:var(--tx2)"><strong>Arrastra tu archivo aquí</strong><br>o haz clic para seleccionar (.csv, .xlsx, .xls)</p>
+      <p style="font-size:13px;color:var(--tx2)"><strong>Arrastra tu archivo aquí</strong><br>o haz clic para seleccionar (.csv, .xlsx, .xls, .txt)</p>
       <p id="file-status" style="font-size:12px;color:var(--tx3);margin-top:8px"></p>
     </div>
     <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
@@ -744,17 +744,19 @@ function processFile(file){
 
   const ext=file.name.split('.').pop().toLowerCase();
 
-  if(ext==='csv'){
+  if(ext==='txt'||ext==='csv'){
     const reader=new FileReader();
     reader.onload=e=>{
       try{
         const text=e.target.result;
-        const parsed=parseCSV(text);
+        // Detectar si es reporte INRENOSA (contiene "Reporte de Diferencias en Ventas" o "Venta Ruta")
+        const esInrenosa=text.includes('Reporte de Diferencias')&&text.includes('Venta');
+        const parsed=esInrenosa?parseInrenosaTxt(text):parseCSV(text);
         if(parsed.length===0){if(status)status.textContent='El archivo está vacío o no tiene el formato correcto.';return}
         impParsed=parsed;
-        if(status)status.textContent='✅ '+parsed.length+' registros listos — '+file.name;
+        if(status)status.textContent=`✅ ${parsed.length} registros listos${esInrenosa?' (reporte INRENOSA detectado)':''} — ${file.name}`;
         if(btnR){btnR.style.opacity='1';btnR.style.pointerEvents='auto';}
-      }catch(err){if(status)status.textContent='Error al leer CSV: '+err.message;}
+      }catch(err){if(status)status.textContent='Error al leer archivo: '+err.message;}
     };
     reader.readAsText(file,'UTF-8');
   } else if(ext==='xlsx'||ext==='xls'){
@@ -772,6 +774,35 @@ function processFile(file){
   } else {
     if(status)status.textContent='Formato no soportado. Usa .csv, .xlsx o .xls';
   }
+}
+
+// Parser para reporte de diferencias INRENOSA (.txt)
+// Formato: "  1234 Descripcion producto       NNN   NNN   NNN"
+// Toma la columna "Venta Ruta" (primer número tras la descripción)
+function parseInrenosaTxt(text){
+  const results=[];
+  const lines=text.split(/\r?\n/);
+  // Una línea de producto válida: empieza con espacios + 3-5 dígitos de SKU + descripción + números
+  // Excluir líneas de encabezado, subtotal, total y separadores
+  const skipPat=/SubTotal|Total\s|Página|Programa|Generación|Hora|Producto|Ruta|APT|Diferencia|---+|BEBIDAS|INRENOSA|^\s*$/i;
+  const prodPat=/^\s{0,8}(\d{3,5})\s+\S.{5,}\s+([\d,]+)\s+([\d,]+)/;
+
+  for(const line of lines){
+    if(skipPat.test(line)) continue;
+    const m=line.match(prodPat);
+    if(!m) continue;
+    const sku=m[1].trim();
+    // cantidad = Venta Ruta (primer número, m[2])
+    const qty=parseInt(m[2].replace(/,/g,''),10);
+    if(!sku||isNaN(qty)||qty===0) continue;
+    // Buscar si ya existe el SKU (puede repetirse en páginas distintas)
+    const existing=results.find(r=>r.sku===sku);
+    if(existing) existing.qty+=qty;
+    else results.push({sku, qty, name:''});
+  }
+
+  // Convertir al formato que espera impParsed: [{sku, qty}]
+  return results.map(r=>({sku:r.sku, qty:r.qty}));
 }
 
 function parseCSV(text){
