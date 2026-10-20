@@ -4491,13 +4491,14 @@ function exportarTodasOC(){
   // Cargar datos del backend (con fallback a localStorage)
   await DB._loadAll();
 
-  // Cargar equivalencias desde tabla BD (fuente de verdad — reemplaza localStorage)
+  // Cargar equivalencias: BD es fuente de verdad SOLO si tiene datos
+  // Si BD está vacía pero localStorage tiene datos → subir localStorage a BD (bootstrap)
   try {
     const equivRows = await apiFetch('/api/equivalencias');
-    if(Array.isArray(equivRows)){
-      // Reconstruir EQUIV_DB desde BD, preservando tasa del localStorage si existe
-      const localEquiv = EQUIV_DB; // guardar tasa y descripcionXML del local
-      Object.keys(EQUIV_DB).forEach(k => delete EQUIV_DB[k]); // limpiar
+    if(Array.isArray(equivRows) && equivRows.length > 0){
+      // BD tiene datos → reemplazar EQUIV_DB con lo de BD
+      const localEquiv = {...EQUIV_DB};
+      Object.keys(EQUIV_DB).forEach(k => delete EQUIV_DB[k]);
       equivRows.forEach(r => {
         const key = r.nombre_xml;
         const local = localEquiv[key]||{};
@@ -4509,9 +4510,24 @@ function exportarTodasOC(){
           _id: r.id
         };
       });
-      saveEquivDB(); // sincronizar localStorage con lo que hay en BD
+      saveEquivDB();
+    } else if(Array.isArray(equivRows) && equivRows.length === 0){
+      // BD vacía → subir localStorage a BD (bootstrap)
+      const localKeys = Object.keys(EQUIV_DB);
+      if(localKeys.length > 0){
+        const payload = localKeys
+          .filter(k => EQUIV_DB[k] && EQUIV_DB[k].sku)
+          .map(k => ({ nombre_xml: k, sku: String(EQUIV_DB[k].sku) }));
+        if(payload.length > 0){
+          apiFetch('/api/equivalencias/batch', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ equivalencias: payload })
+          }).catch(()=>{});
+        }
+      }
     }
-  } catch(e){ /* usa EQUIV_DB del localStorage */ }
+  } catch(e){ /* usa EQUIV_DB del localStorage sin cambios */ }
 
   // Iniciar navegación — primer módulo permitido
   const firstMod = user && user.modulos && user.modulos.length ? user.modulos[0] : 'inv';
