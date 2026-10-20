@@ -751,8 +751,15 @@ function processFile(file){
         const text=e.target.result;
         // Detectar si es reporte INRENOSA (contiene "Reporte de Diferencias en Ventas" o "Venta Ruta")
         const esInrenosa=text.includes('Reporte de Diferencias')&&text.includes('Venta');
-        const parsed=esInrenosa?parseInrenosaTxt(text):parseCSV(text);
+        let parsed=esInrenosa?parseInrenosaTxt(text):parseCSV(text);
         if(parsed.length===0){if(status)status.textContent='El archivo está vacío o no tiene el formato correcto.';return}
+        // Enriquecer con nombre del catálogo de productos
+        if(esInrenosa){
+          parsed=parsed.map(r=>{
+            const prod=PRODS.find(p=>String(p.sku)===String(r.sku));
+            return{...r, name:prod?prod.name:r.sku};
+          });
+        }
         impParsed=parsed;
         if(status)status.textContent=`✅ ${parsed.length} registros listos${esInrenosa?' (reporte INRENOSA detectado)':''} — ${file.name}`;
         if(btnR){btnR.style.opacity='1';btnR.style.pointerEvents='auto';}
