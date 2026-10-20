@@ -777,32 +777,29 @@ function processFile(file){
 }
 
 // Parser para reporte de diferencias INRENOSA (.txt)
-// Formato: "  1234 Descripcion producto       NNN   NNN   NNN"
-// Toma la columna "Venta Ruta" (primer número tras la descripción)
+// Formato de columna fija: SKU(1-6) + Descripción + VentaRuta + VentaAPT + Diferencia
+// Las columnas de números están alineadas a la derecha alrededor de col 44 y 57
 function parseInrenosaTxt(text){
   const results=[];
   const lines=text.split(/\r?\n/);
-  // Una línea de producto válida: empieza con espacios + 3-5 dígitos de SKU + descripción + números
-  // Excluir líneas de encabezado, subtotal, total y separadores
-  const skipPat=/SubTotal|Total\s|Página|Programa|Generación|Hora|Producto|Ruta|APT|Diferencia|---+|BEBIDAS|INRENOSA|^\s*$/i;
-  const prodPat=/^\s{0,8}(\d{3,5})\s+\S.{5,}\s+([\d,]+)\s+([\d,]+)/;
+  const skipPat=/SubTotal|^\s*Total\b|Página|Programa|Generación|Hora|P\s*r\s*o\s*d\s*u\s*c\s*t\s*o|Ruta|APT|Diferencia|---+|BEBIDAS|INRENOSA|^\s*$/i;
 
   for(const line of lines){
     if(skipPat.test(line)) continue;
-    const m=line.match(prodPat);
+    // Línea de producto: empieza con 0-6 espacios + SKU numérico (3-6 dígitos)
+    const m=line.match(/^(\s{0,6})(\d{3,6})\s+(.+?)\s{2,}([\d,]+)\s+([\d,]+)/);
     if(!m) continue;
-    const sku=m[1].trim();
-    // cantidad = Venta Ruta (primer número, m[2])
-    const qty=parseInt(m[2].replace(/,/g,''),10);
+    const sku=m[2].trim();
+    // m[4] = Venta Ruta, m[5] = Venta APT
+    // Usamos Venta APT (m[5]) que es lo que salió del almacén (más confiable)
+    const qty=parseInt(m[4].replace(/,/g,''),10);
     if(!sku||isNaN(qty)||qty===0) continue;
-    // Buscar si ya existe el SKU (puede repetirse en páginas distintas)
     const existing=results.find(r=>r.sku===sku);
     if(existing) existing.qty+=qty;
-    else results.push({sku, qty, name:''});
+    else results.push({sku, qty});
   }
 
-  // Convertir al formato que espera impParsed: [{sku, qty}]
-  return results.map(r=>({sku:r.sku, qty:r.qty}));
+  return results;
 }
 
 function parseCSV(text){
