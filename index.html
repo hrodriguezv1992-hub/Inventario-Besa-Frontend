@@ -4491,16 +4491,25 @@ function exportarTodasOC(){
   // Cargar datos del backend (con fallback a localStorage)
   await DB._loadAll();
 
-  // Cargar equivalencias desde tabla BD (fuente de verdad)
+  // Cargar equivalencias desde tabla BD (fuente de verdad — reemplaza localStorage)
   try {
     const equivRows = await apiFetch('/api/equivalencias');
-    if(Array.isArray(equivRows) && equivRows.length > 0){
+    if(Array.isArray(equivRows)){
+      // Reconstruir EQUIV_DB desde BD, preservando tasa del localStorage si existe
+      const localEquiv = EQUIV_DB; // guardar tasa y descripcionXML del local
+      Object.keys(EQUIV_DB).forEach(k => delete EQUIV_DB[k]); // limpiar
       equivRows.forEach(r => {
         const key = r.nombre_xml;
-        if(!EQUIV_DB[key]) EQUIV_DB[key] = {descripcionXML: r.nombre_xml, asignadoEn: r.created_at||'', tasa: undefined};
-        if(r.sku) EQUIV_DB[key].sku = isNaN(r.sku) ? r.sku : Number(r.sku);
-        if(r.id) EQUIV_DB[key]._id = r.id;
+        const local = localEquiv[key]||{};
+        EQUIV_DB[key] = {
+          descripcionXML: local.descripcionXML || r.nombre_xml,
+          asignadoEn: r.created_at ? r.created_at.substring(0,10) : (local.asignadoEn||''),
+          tasa: local.tasa,
+          sku: isNaN(r.sku) ? r.sku : Number(r.sku),
+          _id: r.id
+        };
       });
+      saveEquivDB(); // sincronizar localStorage con lo que hay en BD
     }
   } catch(e){ /* usa EQUIV_DB del localStorage */ }
 
